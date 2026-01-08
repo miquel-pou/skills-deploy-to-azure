@@ -24,22 +24,35 @@ jobs:
       with:
         github-token: ${{secrets.GITHUB_TOKEN}}
         script: |
-          const projectId = 1;
+            const projectName = 'Test Project';
+            const columnName = 'Todo';
 
-          const columns = await github.projects.listColumns({
-            project_id: projectId
-          });
+            // 1. Obtener proyectos del repositorio
+            const projects = await github.projects.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
 
-          const todoColumn = columns.data.find(c => c.name === 'Todo');
-    
-          if (!todoColumn) {
-            throw new Error('La columna Todo no existe');
-          }    
+            const project = projects.data.find(p => p.name === projectName);
+            if (!project) {
+              throw new Error(`Proyecto "${projectName}" no encontrado`);
+            }
 
-          console.log('Column ID:', todoColumn.id);
-          
-          github.projects.createCard({
-            column_id: todoColumn,
-            content_id: context.payload.issue.id,
-            content_type: "Issue"
-          });
+            // 2. Obtener columnas del proyecto
+            const columns = await github.projects.listColumns({
+              project_id: project.id
+            });
+
+            const column = columns.data.find(c => c.name === columnName);
+            if (!column) {
+              throw new Error(`Columna "${columnName}" no encontrada`);
+            }
+
+            // 3. Crear la card en la columna
+            await github.projects.createCard({
+              column_id: column.id,
+              content_id: context.payload.issue.id,
+              content_type: 'Issue'
+            });
+
+            console.log(`Issue añadida a ${projectName} → ${columnName}`);

@@ -18,41 +18,61 @@ jobs:
             body: "🎉 You've created this issue comment using GitHub Script!!!"
             })
 
-    - name: Add issue to project board
+ # 1️⃣ Obtener ID del proyecto "Test Project"
+    - name: Get project ID
+      id: get_project
+      uses: actions/github-script@0.8.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const projectName = 'Test Project';
+
+          const projects = await github.projects.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo
+          });
+
+          const project = projects.data.find(p => p.name === projectName);
+          if (!project) {
+            throw new Error(`Proyecto "${projectName}" no encontrado`);
+          }
+
+          core.setOutput('project_id', project.id);
+
+    # 2️⃣ Obtener ID de la columna "Todo"
+    - name: Get column ID
+      id: get_column
+      uses: actions/github-script@0.8.0
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const columnName = 'Todo';
+          const projectId = ${{ steps.get_project.outputs.project_id }};
+
+          const columns = await github.projects.listColumns({
+            project_id: projectId
+          });
+
+          const column = columns.data.find(c => c.name === columnName);
+          if (!column) {
+            throw new Error(`Columna "${columnName}" no encontrada`);
+          }
+
+          core.setOutput('column_id', column.id);
+
+    # 3️⃣ Crear la card en la columna
+    - name: Create project card
       if: contains(github.event.issue.labels.*.name, 'bug')
       uses: actions/github-script@0.8.0
       with:
-        github-token: ${{secrets.GITHUB_TOKEN}}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
-            const projectName = 'Test Project';
-            const columnName = 'Todo';
+          const columnId = ${{ steps.get_column.outputs.column_id }};
 
-            // 1. Obtener proyectos del repositorio
-            const projects = await github.projects.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo
-            });
+          await github.projects.createCard({
+            column_id: columnId,
+            content_id: context.payload.issue.id,
+            content_type: 'Issue'
+          });
 
-            const project = projects.data.find(p => p.name === projectName);
-            if (!project) {
-              throw new Error(`Proyecto "${projectName}" no encontrado`);
-            }
-
-            // 2. Obtener columnas del proyecto
-            const columns = await github.projects.listColumns({
-              project_id: project.id
-            });
-
-            const column = columns.data.find(c => c.name === columnName);
-            if (!column) {
-              throw new Error(`Columna "${columnName}" no encontrada`);
-            }
-
-            // 3. Crear la card en la columna
-            await github.projects.createCard({
-              column_id: column.id,
-              content_id: context.payload.issue.id,
-              content_type: 'Issue'
-            });
-
-            console.log(`Issue añadida a ${projectName} → ${columnName}`);
+          console.log('Card creada correctamente');

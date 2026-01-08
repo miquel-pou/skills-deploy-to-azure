@@ -26,53 +26,91 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
           const projectName = 'Test Project';
+            const owner = context.repo.owner;
+            const issueNodeId = context.payload.issue.node_id;
 
-          const projects = await github.projects.listForRepo({
-            owner: context.repo.owner,
-            repo: context.repo.repo
-          });
+            // 1️⃣ Buscar project + campo Status + opción Todo
+            const query = `
+              query ($login: String!) {
+                user(login: $login) {
+                  projectsV2(first: 20) {
+                    nodes {
+                      id
+                      title
+                      fields(first: 20) {
+                        nodes {
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options {
+                              id
+                              name
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
 
-          const project = projects.data.find(p => p.name === projectName);
-          if (!project) {
-            throw new Error(`Proyecto "${projectName}" no encontrado`);
-          }
+            const { user } = await github.graphql(query, { login: owner });
 
-          core.setOutput('project_id', project.id);
+            const project = user.projectsV2.nodes
+              .find(p => p.title === projectName);
+            if (!project) throw new Error('Project no encontrado');
 
-    # 2️⃣ Obtener ID de la columna "Todo"
-    - name: Get column ID
-      id: get_column
-      uses: actions/github-script@0.8.0
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const columnName = 'Todo';
-          const projectId = ${{ steps.get_project.outputs.project_id }};
+            const status = project.fields.nodes
+              .find(f => f.name === 'Status');
+            if (!status) throw new Error('Campo Status no encontrado');
 
-          const columns = await github.projects.listColumns({
-            project_id: projectId
-          });
+            const todo = status.options
+              .find(o => o.name === 'Todo');
+            if (!todo) throw new Error('Opción Todo no encontrada');
 
-          const column = columns.data.find(c => c.name === columnName);
-          if (!column) {
-            throw new Error(`Columna "${columnName}" no encontrada`);
-          }
+            // 2️⃣ Añadir issue al project
+            const addItem = `
+              mutation ($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(
+                  input: { projectId: $projectId, contentId: $contentId }
+                ) {
+                  item { id }
+                }
+              }
+            `;
 
-          core.setOutput('column_id', column.id);
+            const { addProjectV2ItemById } = await github.graphql(addItem, {
+              projectId: project.id,
+              contentId: issueNodeId
+            });
 
-    # 3️⃣ Crear la card en la columna
-    - name: Create project card
-      if: contains(github.event.issue.labels.*.name, 'bug')
-      uses: actions/github-script@0.8.0
-      with:
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        script: |
-          const columnId = ${{ steps.get_column.outputs.column_id }};
+            // 3️⃣ Poner Status = Todo
+            const setStatus = `
+              mutation (
+                $projectId: ID!,
+                $itemId: ID!,
+                $fieldId: ID!,
+                $optionId: String!
+              ) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }
+                ) {
+                  projectV2Item { id }
+                }
+              }
+            `;
 
-          await github.projects.createCard({
-            column_id: columnId,
-            content_id: context.payload.issue.id,
-            content_type: 'Issue'
-          });
+            await github.graphql(setStatus, {
+              projectId: project.id,
+              itemId: addProjectV2ItemById.item.id,
+              fieldId: status.id,
+              optionId: todo.id
+            });
 
-          console.log('Card creada correctamente');
+            console.log('Issue añadida a Test Project con Status = Todo');

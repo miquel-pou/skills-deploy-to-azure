@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Comment on new issue
-      uses: actions/github-script@0.8.0
+      uses: actions/github-script@v8.0.0
       with:
         github-token: ${{secrets.GITHUB_TOKEN}}
         script: |
@@ -21,7 +21,7 @@ jobs:
  # 1️⃣ Obtener ID del proyecto "Test Project"
     - name: Get project ID
       id: get_project
-      uses: actions/github-script@0.8.0
+      uses: actions/github-script@v8.0.0
       with:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         script: |
